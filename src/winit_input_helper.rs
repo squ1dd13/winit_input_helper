@@ -1,8 +1,10 @@
-use winit::dpi::PhysicalSize;
-use winit::event::{Event, ScanCode, VirtualKeyCode, WindowEvent};
+use winit::event::{Event, WindowEvent};
+use winit::keyboard::Key;
+use winit::keyboard::KeyCode;
+use winit::{dpi::PhysicalSize, event::MouseButton};
 
 use crate::current_input::{CurrentInput, KeyAction, MouseAction, ScanCodeAction, TextChar};
-use std::path::PathBuf;
+use std::{borrow::Borrow, path::PathBuf};
 
 /// The main struct of the API.
 ///
@@ -125,11 +127,11 @@ impl WinitInputHelper {
     /// Otherwise returns false.
     ///
     /// This is suitable for game controls.
-    pub fn key_pressed(&self, check_key_code: VirtualKeyCode) -> bool {
+    pub fn key_pressed(&self, check_key_code: impl Borrow<Key>) -> bool {
         if let Some(current) = &self.current {
             for action in &current.key_actions {
-                if let KeyAction::Pressed(key_code) = *action {
-                    if key_code == check_key_code {
+                if let KeyAction::Pressed(key_code) = action {
+                    if key_code == check_key_code.borrow() {
                         return true;
                     }
                 }
@@ -143,11 +145,11 @@ impl WinitInputHelper {
     ///
     /// Will repeat key presses while held down according to the OS's key repeat configuration
     /// This is suitable for UI.
-    pub fn key_pressed_os(&self, check_key_code: VirtualKeyCode) -> bool {
+    pub fn key_pressed_os(&self, check_key_code: impl Borrow<Key>) -> bool {
         if let Some(current) = &self.current {
             for action in &current.key_actions {
-                if let KeyAction::PressedOs(key_code) = *action {
-                    if key_code == check_key_code {
+                if let KeyAction::PressedOs(key_code) = action {
+                    if key_code == check_key_code.borrow() {
                         return true;
                     }
                 }
@@ -158,11 +160,11 @@ impl WinitInputHelper {
 
     /// Returns true when the specified keyboard key goes from "pressed" to "not pressed".
     /// Otherwise returns false.
-    pub fn key_released(&self, check_key_code: VirtualKeyCode) -> bool {
+    pub fn key_released(&self, check_key_code: impl Borrow<Key>) -> bool {
         if let Some(current) = &self.current {
             for action in &current.key_actions {
-                if let KeyAction::Released(key_code) = *action {
-                    if key_code == check_key_code {
+                if let KeyAction::Released(key_code) = action {
+                    if key_code == check_key_code.borrow() {
                         return true;
                     }
                 }
@@ -173,9 +175,14 @@ impl WinitInputHelper {
 
     /// Returns true while the specified keyboard key remains "pressed".
     /// Otherwise returns false.
-    pub fn key_held(&self, key_code: VirtualKeyCode) -> bool {
+    pub fn key_held(&self, key_code: impl Borrow<Key>) -> bool {
         match &self.current {
-            Some(current) => current.key_held[key_code as usize],
+            Some(current) => current
+                .key_held
+                .get(key_code.borrow())
+                .copied()
+                .unwrap_or_default(),
+
             None => false,
         }
     }
@@ -184,7 +191,7 @@ impl WinitInputHelper {
     /// Otherwise returns false.
     ///
     /// This is suitable for game controls that do not depend on the user keyboard layout.
-    pub fn key_pressed_scancode(&self, scancode: ScanCode) -> bool {
+    pub fn key_pressed_scancode(&self, scancode: KeyCode) -> bool {
         if let Some(current) = &self.current {
             let searched_action = ScanCodeAction::Pressed(scancode);
             if current.scancode_actions.contains(&searched_action) {
@@ -199,7 +206,7 @@ impl WinitInputHelper {
     ///
     /// Will repeat key presses while held down according to the OS's key repeat configuration
     /// This is suitable for UI, and does not depend on the user keyboard layout.
-    pub fn key_pressed_os_scancode(&self, scancode: ScanCode) -> bool {
+    pub fn key_pressed_os_scancode(&self, scancode: KeyCode) -> bool {
         if let Some(current) = &self.current {
             let searched_action = ScanCodeAction::PressedOs(scancode);
             if current.scancode_actions.contains(&searched_action) {
@@ -213,7 +220,7 @@ impl WinitInputHelper {
     /// Otherwise returns false.
     ///
     /// This does not depend on the user keyboard layout.
-    pub fn key_released_scancode(&self, scancode: ScanCode) -> bool {
+    pub fn key_released_scancode(&self, scancode: KeyCode) -> bool {
         if let Some(current) = &self.current {
             let searched_action = ScanCodeAction::Released(scancode);
             if current.scancode_actions.contains(&searched_action) {
@@ -227,9 +234,13 @@ impl WinitInputHelper {
     /// Otherwise returns false.
     ///
     /// This does not depend on the user keyboard layout.
-    pub fn key_held_scancode(&self, scancode: ScanCode) -> bool {
+    pub fn key_held_scancode(&self, scancode: KeyCode) -> bool {
         if let Some(current) = &self.current {
-            return current.scancode_held.contains(&scancode);
+            return current
+                .scancode_held
+                .get(&scancode)
+                .copied()
+                .unwrap_or_default();
         }
         false
     }
@@ -237,29 +248,24 @@ impl WinitInputHelper {
     /// Returns true while any shift key is held on the keyboard.
     /// Otherwise returns false.
     pub fn held_shift(&self) -> bool {
-        self.key_held(VirtualKeyCode::LShift) || self.key_held(VirtualKeyCode::RShift)
+        self.key_held(Key::Shift)
     }
 
     /// Returns true while any control key is held on the keyboard.
     /// Otherwise returns false.
     pub fn held_control(&self) -> bool {
-        self.key_held(VirtualKeyCode::LControl) || self.key_held(VirtualKeyCode::RControl)
+        self.key_held(Key::Control)
     }
 
     /// Returns true while any alt key is held on the keyboard.
     /// Otherwise returns false.
     pub fn held_alt(&self) -> bool {
-        self.key_held(VirtualKeyCode::LAlt) || self.key_held(VirtualKeyCode::RAlt)
+        self.key_held(Key::Alt)
     }
 
     /// Returns true when the specified mouse button goes from "not pressed" to "pressed".
     /// Otherwise returns false.
-    ///
-    /// Left   => 0
-    /// Right  => 1
-    /// Middle => 2
-    /// Other  => 3..255
-    pub fn mouse_pressed(&self, check_mouse_button: usize) -> bool {
+    pub fn mouse_pressed(&self, check_mouse_button: MouseButton) -> bool {
         // TODO: Take MouseButton instead of usize
         if let Some(current) = &self.current {
             for action in &current.mouse_actions {
@@ -275,12 +281,7 @@ impl WinitInputHelper {
 
     /// Returns true when the specified mouse button goes from "pressed" to "not pressed".
     /// Otherwise returns false.
-    ///
-    /// Left   => 0
-    /// Right  => 1
-    /// Middle => 2
-    /// Other  => 3..255
-    pub fn mouse_released(&self, check_mouse_button: usize) -> bool {
+    pub fn mouse_released(&self, check_mouse_button: MouseButton) -> bool {
         // TODO: Take MouseButton instead of usize
         if let Some(current) = &self.current {
             for action in &current.mouse_actions {
@@ -296,15 +297,14 @@ impl WinitInputHelper {
 
     /// Returns true while the specified mouse button remains "pressed".
     /// Otherwise returns false.
-    ///
-    /// Left   => 0
-    /// Right  => 1
-    /// Middle => 2
-    /// Other  => 3..255
-    pub fn mouse_held(&self, mouse_button: usize) -> bool {
+    pub fn mouse_held(&self, mouse_button: MouseButton) -> bool {
         // TODO: Take MouseButton instead of usize
         match &self.current {
-            Some(current) => current.mouse_held[mouse_button],
+            Some(current) => current
+                .mouse_held
+                .get(&mouse_button)
+                .copied()
+                .unwrap_or_default(),
             None => false,
         }
     }
